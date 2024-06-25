@@ -1,0 +1,83 @@
+import pandas as pd
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from shapely.geometry import Point, Polygon
+import numpy as np 
+import contextily as cx
+
+# is there a patternt to the location of trees?
+
+path = r'C:\Users\zheng\OneDrive - Louisiana State University\Documents\1 GSAPP\SMORGASBORD\1 Data\2015_Street_Tree_Census_-_Tree_Data.csv'
+df = pd.read_csv(path)
+
+# convert 'latitude' and 'longitude' column (float values) to Shapely point object
+def lat_lng_to_point(data):
+    return Point([data['longitude'], data['latitude']])
+
+df['geom'] = df.apply(lat_lng_to_point, axis=1)
+df['geom'].head()
+
+gdf = gpd.GeoDataFrame(df, geometry='geom')
+gdf.crs = 'EPSG:4326'
+
+# filter gdf and define resolution of the plot
+gdf.loc[gdf['zip_city']=='New York'].plot(figsize=(12,14), markersize=0.25)
+
+# update CRS Projection
+gdf = gdf.to_crs(epsg=3857)
+
+ax = gdf.loc[gdf['zip_city']=='New York'].plot(figsize=(12,14), markersize=0.25) # Matplotlib Axes object to manipulate plot
+cx.add_basemap(ax, source=cx.providers.OpenStreetMap.BlackAndWhite)
+ax.set_axis_off()
+
+# filter the tree dataset to only those within manhattan
+manhattan_trees = gdf.loc[gdf['zip_city']=='New York']
+
+# get the outer bounds of the points
+xmin, ymin, xmax, ymax = manhattan_trees.total_bounds
+
+# specify the number of cells along x + y axis
+x = 40
+y = 80
+wide = abs(xmin - xmax)/x # computes the absolute difference/2
+length = abs(ymin - ymax)/y
+
+# create a list of points that will define grid corners
+cols = np.arange(xmin, xmax + wide, wide)
+rows = np.arange(ymin, ymax + length, length)
+
+# iterate over list of corners to create Shapely Polygon objects
+polygons = []
+for x in cols[:-1]:
+    for y in rows[:-1]:
+        polygons.append(Polygon([(x,y), (x+wide, y), (x+wide, y+length), (x, y+length)]))
+
+grid = gpd.GeoDataFrame({'geometry': polygons, 'cell_id': list(range(len(polygons)))})
+grid.crs = 'EPSG:4326'
+
+# merge
+grid_trees = gpd.sjoin(grid, manhattan_trees)
+
+grid_tree_count = grid_trees.groupby('cell_id')['tree_id'].count()
+grid_tree_count.rename('tree_count', inplace=True)
+
+grid.merge(grid_tree_count, on='cell_id').plot(
+    column='tree_count', figsize=(12,14), edgecolor='white'
+)
+cx.add_basemap(ax, source=cx.providers.OpenStreetMap.BlackAndWhite, crs='EPSG:4326')
+ax.set_axis_off()
+
+# create the base layer on which will go the KDE and mapping context
+_, ax = plt.subplots(1, figsize=(12, 14))
+
+# use Seaborn to plot KDE
+sns.kdeplot(
+    manhattan_trees['longitude'],
+    manhattan_trees['latitude'],
+    cmap='viridis',
+    shade=True
+)
+
+# add context
+cx.add_basemap(ax, source=cx.providers.OpenStreetMap.BlackAndWhite, crs='EPSG:4326')

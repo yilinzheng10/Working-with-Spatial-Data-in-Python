@@ -25,5 +25,6 @@ prospect_park = gdf[mask]
 # (value returns a list so we select the first item)
 polygon = prospect_park['geometry'].values[0]
 
-polygon.area
-print(polygon.area)
+# use OSMNX to query OpenStreetMap and download a road network
+gov_island = osmnx.graph_from_place("Governors Island, New York, United States")
+osmnx.plot_graph(gov_island)
